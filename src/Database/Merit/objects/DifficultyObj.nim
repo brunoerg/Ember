@@ -1,21 +1,34 @@
-#BN lib.
-import BN
+#Errors lib.
+import ../../../lib/Errors
+
+#Util lib.
+import ../../../lib/Util
+
+#Hash lib.
+import ../../../lib/Hash
 
 #Finals lib.
 import finals
 
+#StInt lib.
+import StInt
+
 #Difficulty object.
 finalsd:
-    type Difficulty* = ref object of RootObj
+    type Difficulty* = object
         #Start of the period.
-        start* {.final.}: uint
+        start* {.final.}: int
         #End of the period.
-        endBlock* {.final.}: uint
+        endBlock* {.final.}: int
         #Difficulty to beat.
-        difficulty* {.final.}: BN
+        difficulty* {.final.}: StUint[512]
 
-#Create a new Difficulty object.
-func newDifficultyObj*(start: uint, endBlock: uint, difficulty: BN): Difficulty {.raises: [].} =
+#Constructors.
+func newDifficultyObj*(
+    start: int,
+    endBlock: int,
+    difficulty: StUint[512]
+): Difficulty {.forceCheck: [].} =
     result = Difficulty(
         start: start,
         endBlock: endBlock,
@@ -24,3 +37,19 @@ func newDifficultyObj*(start: uint, endBlock: uint, difficulty: BN): Difficulty 
     result.ffinalizeStart()
     result.ffinalizeEndBlock()
     result.ffinalizeDifficulty()
+
+func newDifficultyObj*(
+    start: int,
+    endBlock: int,
+    difficulty: Hash[384]
+): Difficulty {.forceCheck: [
+    ValueError
+].} =
+    try:
+        result = newDifficultyObj(
+            start,
+            endBlock,
+            ($difficulty).parse(StUint[512], 16)
+        )
+    except ValueError as e:
+        fcRaise e

@@ -1,52 +1,52 @@
+#Errors lib.
+import ../../lib/Errors
+
+#Global Function Box object.
+import ../../objects/GlobalFunctionBoxObj
+
 #Import the Clients object.
 import ClientsObj
 
-#Events library.
-import ec_events
+#Network Function Box.
+import NetworkLibFunctionBoxObj
 
 #finals lib.
 import finals
-
-#Tables standard lib.
-import tables
 
 #Asyncnet standard lib.
 import asyncnet
 
 finalsd:
-    type Network* = ref object of RootObj
+    type Network* = ref object
         #Network ID.
-        id* {.final.}: uint
+        id* {.final.}: int
         #Protocol version.
-        protocol* {.final.}: uint
+        protocol* {.final.}: int
         #Clients.
         clients*: Clients
         #Server.
         server* {.final.}: AsyncSocket
-        #Event Emitter for the Clients/Server.
-        subEvents* {.final.}: EventEmitter
-        #Event Emitter for the node.
-        nodeEvents* {.final.}: EventEmitter
+        #Network Function Box.
+        networkFunctions* {.final.}: NetworkLibFunctionBox
+        #Global Function Box.
+        mainFunctions* {.final.}: GlobalFunctionBox
 
 #Constructor.
 func newNetworkObj*(
-    id: uint,
-    protocol: uint,
+    id: int,
+    protocol: int,
     clients: Clients,
-    server: AsyncSocket,
-    subEvents: EventEmitter,
-    nodeEvents: EventEmitter
-): Network {.raises: [].} =
+    networkFunctions: NetworkLibFunctionBox,
+    mainFunctions: GlobalFunctionBox
+): Network {.forceCheck: [].} =
     result = Network(
         id: id,
         protocol: protocol,
         clients: clients,
-        server: server,
-        subEvents: subEvents,
-        nodeEvents: nodeEvents
+        networkFunctions: networkFunctions,
+        mainFunctions: mainFunctions
     )
     result.ffinalizeID()
     result.ffinalizeProtocol()
-    result.ffinalizeServer()
-    result.ffinalizeSubEvents()
-    result.ffinalizeNodeEvents()
+    result.ffinalizeNetworkFunctions()
+    result.ffinalizeMainFunctions()

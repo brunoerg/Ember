@@ -1,56 +1,100 @@
-include MainConstants
+include MainChainParams
 
 #Global variables used throughout Main.
 var
-    events: EventEmitter = newEventEmitter() #EventEmitter for queries and new data.
+    #Global Function Box.
+    functions: GlobalFunctionBox = newGlobalFunctionBox()
+
+    #Config.
+    config: Config = newConfig()
+
+    #Chain Parames.
+    params: ChainParams
+
+    #Consensus.
+    consensus {.threadvar.}: Consensus
 
     #Merit.
-    merit {.threadvar.}: Merit #Blockchain and state.
+    merit {.threadvar.}: Merit
 
-    #Lattice.
-    lattice {.threadvar.}: Lattice  #Lattice.
+    #Transactions.
+    transactions {.threadvar.}: Transactions
+
+    #DB.
+    database {.threadvar.}: DB
 
     #Personal.
-    miner: bool                  #Miner boolean.
-    minerWallet: MinerWallet     #Miner Wallet.
-    wallet {.threadvar.}: Wallet #Wallet.
+    verifyLock: Lock               #Verify lock to stop us from triggering a MeritRemoval.
+    wallet {.threadvar.}: Wallet   #Wallet.
 
     #Network.
     network {.threadvar.}: Network #Network.
 
-    #UI.
-    fromMain: Channel[string] #Channel from the 'main' thread to the UI thread.
+    #Interfaces.
+    fromMain: Channel[string] #Channel from the 'main' thread to the Interfaces thread.
     toRPC: Channel[JSONNode]  #Channel to the RPC from the GUI.
     toGUI: Channel[JSONNode]  #Channel to the GUI from the RPC.
     rpc {.threadvar.}: RPC    #RPC object.
 
-#If there are params...
-if paramCount() > 0:
-    #If the miner argument was passed...
-    if paramStr(1) == "--miner":
-        miner = true
+case config.network:
+    of "mainnet":
+        doAssert(false, "The mainnet has yet to launch.")
 
-        if paramCount() > 1:
-            minerWallet = newMinerWallet(newBLSPrivateKeyFromBytes(paramStr(2)))
-        else:
-            raise newException(ValueError, "No BLS Private Key was passed with --miner.")
+    of "testnet":
+        params = ChainParams(
+            GENESIS: "MEROS_DEVELOPER_TESTNET_2",
 
-#Properly shutdown.
-events.on(
-    "system.quit",
-    proc () {.raises: [ChannelError, AsyncError, SocketError].} =
-        #Shutdown the GUI.
-        try:
-            fromMain.send("shutdown")
-        except:
-            raise newException(ChannelError, "Couldn't send shutdown to the GUI.")
+            BLOCK_TIME: 600,
+            LIVE_MERIT: 1000,
 
-        #Shutdown the RPC.
-        rpc.shutdown()
+            BLOCK_DIFFICULTY: "FAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            SEND_DIFFICULTY:  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            DATA_DIFFICULTY:  "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
 
-        #Shut down the Network.
-        network.shutdown()
+            NETWORK_ID: 1,
+            NETWORK_PROTOCOL: 0
+        )
 
-        #Quit.
-        quit(0)
-)
+    of "devnet":
+        params = ChainParams(
+            GENESIS: "MEROS_DEVELOPER_NETWORK",
+
+            BLOCK_TIME: 60,
+            LIVE_MERIT: 100,
+
+            BLOCK_DIFFICULTY: "FAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            SEND_DIFFICULTY:  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            DATA_DIFFICULTY:  "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+
+            #By not using 255, we allow eventually extending these fields. If we read 255, we also read an extra byte,
+            NETWORK_ID: 254,
+            NETWORK_PROTOCOL: 254
+        )
+
+    else:
+        doAssert(false, "Invalid network specified.")
+
+#Function to safely shut down all elements of the node.
+functions.system.quit = proc () {.forceCheck: [].} =
+    #Shutdown the GUI.
+    try:
+        fromMain.send("shutdown")
+    except DeadThreadError as e:
+        echo "Couldn't shutdown the GUI due to a DeadThreadError: " & e.msg
+    except Exception as e:
+        echo "Couldn't shutdown the GUI due to an Exception: " & e.msg
+
+    #Shutdown the RPC.
+    rpc.shutdown()
+
+    #Shut down the Network.
+    network.shutdown()
+
+    #Shut down the DB.
+    try:
+        database.close()
+    except DBError as e:
+        echo "Couldn't shutdown the DB: " & e.msg
+
+    #Quit.
+    quit(0)

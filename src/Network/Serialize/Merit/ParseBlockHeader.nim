@@ -7,34 +7,48 @@ import ../../../lib/Util
 #Hash lib.
 import ../../../lib/Hash
 
-#BLS lib.
-import ../../../lib/BLS
+#MinerWallet lib.
+import ../../../Wallet/MinerWallet
 
-#Miners object.
+#BlockHeader object.
 import ../../../Database/Merit/objects/BlockHeaderObj
 
 #Common serialization functions.
 import ../SerializeCommon
-
-#Finals lib.
-import finals
-
-#String utils standard library.
-import strutils
+export BLOCK_HEADER_LEN
 
 #Parse function.
 proc parseBlockHeader*(
     headerStr: string
-): BlockHeader {.raises: [ValueError, BLSError, FinalAttributeError].} =
-    #Nonce | Last Hash | Verifications Aggregate Signature | Miners Merkle | Time
-    var headersSeq: seq[string] = headerStr.deserialize(5)
+): BlockHeader {.forceCheck: [
+    ValueError,
+    BLSError
+].} =
+    if headerStr.len != BLOCK_HEADER_LEN:
+        raise newException(ValueError, "parseBlockHeader handed the wrong amount of data.")
+
+    #Nonce | Last Hash | Elements Aggregate Signature | Miners Merkle | Time | Proof
+    var headerSeq: seq[string] = headerStr.deserialize(
+        INT_LEN,
+        HASH_LEN,
+        BLS_SIGNATURE_LEN,
+        HASH_LEN,
+        INT_LEN,
+        INT_LEN
+    )
 
     #Create the BlockHeader.
-    result = BlockHeader(
-        verifications: newBLSSignature(headersSeq[2].pad(96)),
-        miners: headersSeq[3].pad(64).toSHA512Hash(),
-        time: uint(headersSeq[4].fromBinary())
-    )
-    #Set the fields marked final we couldn't set inside the constructor.
-    result.nonce = uint(headersSeq[0].fromBinary())
-    result.last = headersSeq[1].pad(64).toArgonHash()
+    try:
+        result = newBlockHeaderObj(
+            headerSeq[0].fromBinary(),
+            headerSeq[1].toArgonHash(),
+            newBLSSignature(headerSeq[2]),
+            headerSeq[3].toBlake384Hash(),
+            uint32(headerSeq[4].fromBinary()),
+            uint32(headerSeq[5].fromBinary())
+        )
+        result.hash = Argon(headerStr.substr(0, headerStr.len - 5), headerSeq[5].pad(8))
+    except ValueError as e:
+        fcRaise e
+    except BLSError as e:
+        fcRaise e

@@ -4,11 +4,8 @@ import ../../../lib/Errors
 #Util lib.
 import ../../../lib/Util
 
-#BLS lib.
-import ../../../lib/BLS
-
-#Address library.
-import ../../../Wallet/Address
+#MinerWallet lib (for BLSPublicKey).
+import ../../../Wallet/MinerWallet
 
 #Miners object.
 import ../../../Database/Merit/objects/MinersObj
@@ -16,24 +13,43 @@ import ../../../Database/Merit/objects/MinersObj
 #Common serialization functions.
 import ../SerializeCommon
 
-#String utils standard library.
-import strutils
-
 #Parse function.
 proc parseMiners*(
     minersStr: string
-): Miners {.raises: [BLSError].} =
-    #Init the result.
-    result = @[]
+): Miners {.forceCheck: [
+    ValueError,
+    BLSError
+].} =
+    #Quantity | BLS Key 1 | Amount 1 .. BLS Key N | Amount N
+    var
+        quantity: int
+        minersSeq: seq[string]
+        miners: seq[Miner]
 
-    #Address1 | Amount1 .. | AddressN | AmountN
-    var minersSeq: seq[string] = minersStr.deserialize(3)
+    if minersStr.len == 0:
+        raise newException(ValueError, "parseMiners not handed enough data to get the quantity.")
 
-    #Add each miner/amount.
-    for i in countup(0, minersSeq.len - 1, 2):
-        result.add(
-            newMinerObj(
-                newBLSPublicKey(minersSeq[i].pad(48)),
-                uint(minersSeq[i + 1].fromBinary())
+    quantity = int(minersStr[0])
+    miners = newSeq[Miner](quantity)
+
+    #Parse each Miner.
+    for i in 0 ..< quantity:
+        minersSeq = minersStr
+            .substr(BYTE_LEN + (i * MINER_LEN))
+            .deserialize(
+                BLS_PUBLIC_KEY_LEN,
+                BYTE_LEN
             )
-        )
+
+        try:
+            if minersSeq[1].len == 0:
+                raise newException(ValueError, "parseMiners not handed enough data to get an amount to reward a miner.")
+
+            miners[i] = newMinerObj(
+                newBLSPublicKey(minersSeq[0]),
+                int(minersSeq[1][0])
+            )
+        except BLSError as e:
+            fcRaise e
+
+    result = newMinersObj(miners)

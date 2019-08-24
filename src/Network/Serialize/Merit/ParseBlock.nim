@@ -4,56 +4,43 @@ import ../../../lib/Errors
 #Util lib.
 import ../../../lib/Util
 
-#Hash lib.
-import ../../../lib/Hash
+#MeritHolderRecord object.
+import ../../../Database/common/objects/MeritHolderRecordObj
 
-#BLS lib.
-import ../../../lib/BLS
-
-#Lattice lib.
-import ../../../Database/Lattice/Lattice
-
-#Verifications, Miners, and Block object.
-import ../../../Database/Merit/objects/VerificationsObj
+#Miners and BlockBody objects.
 import ../../../Database/Merit/objects/MinersObj
-import ../../../Database/Merit/objects/BlockObj
+import ../../../Database/Merit/objects/BlockBodyObj
+
+#BlockHeader and Block libs.
+import ../../../Database/Merit/BlockHeader
+import ../../../Database/Merit/Block
 
 #Deserialize/parse functions.
 import ../SerializeCommon
 import ParseBlockHeader
-import ParseVerifications
-import ParseMiners
-
-#Finals lib.
-import finals
+import ParseBlockBody
 
 #Parse a Block.
 proc parseBlock*(
     blockStr: string
-): Block {.raises: [
+): Block {.forceCheck: [
     ValueError,
-    ArgonError,
-    BLSError,
-    FinalAttributeError
+    BLSError
 ].} =
-    #Header | Proof | Verifications Count | Miners
-    var blockSeq: seq[string] = blockStr.deserialize(4)
+    #Header | Body
+    var
+        header: BlockHeader
+        body: BlockBody
+    try:
+        header = blockStr.substr(0, BLOCK_HEADER_LEN - 1).parseBlockHeader()
+        body = blockStr.substr(BLOCK_HEADER_LEN).parseBlockBody()
+    except ValueError as e:
+        fcRaise e
+    except BLSError as e:
+        fcRaise e
 
     #Create the Block Object.
-    result = Block()
-
-    #Set the Header.
-    result.header = blockSeq[0].parseBlockHeader()
-    #Set the proof.
-    result.proof = uint(blockSeq[1].fromBinary())
-
-    #Set the hash.
-    result.hash = SHA512(blockSeq[0])
-    #Set the Argon hash.
-    result.argon = Argon(result.hash.toString(), result.proof.toBinary())
-
-    #Set the Verifications.
-    result.verifications = blockSeq[2].parseVerifications(result.header.verifications)
-
-    #Set the Miners.
-    result.miners = blockSeq[3].parseMiners()
+    result = newBlockObj(
+        header,
+        body
+    )

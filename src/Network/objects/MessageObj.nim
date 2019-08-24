@@ -1,58 +1,73 @@
-#Util.
-import ../../lib/Util
+#Errors lib.
+import ../../lib/Errors
+
+#Serialization common lib.
+import ../Serialize/SerializeCommon
 
 #finals lib.
 import finals
 
 finalsd:
     type
-        #Message Type enum.
-        MessageType* = enum
+        #Message Type enum. Even though pure is no longer enforced, it does solve ambiguity issues.
+        MessageType* {.pure.} = enum
             Handshake = 0,
-            Syncing = 1,
-            BlockRequest = 2,
-            EntryRequest = 3
-            DataMissing = 4,
-            SyncingOver = 5,
-            HandshakeOver = 6,
-            Verification = 7,
-            Block = 8,
-            Claim = 9,
-            Send = 10,
-            Receive = 11,
-            Data = 12
+            BlockHeight = 1,
+
+            Syncing = 2,
+            SyncingAcknowledged = 3,
+            BlockHeaderRequest = 7,
+            BlockBodyRequest = 8,
+            ElementRequest = 9,
+            TransactionRequest = 10,
+            GetBlockHash = 11,
+            BlockHash = 12,
+            DataMissing = 16,
+            SyncingOver = 17,
+
+            Claim = 18,
+            Send = 19,
+            Data = 20,
+
+            SignedVerification = 23,
+            SignedMeritRemoval = 27,
+
+            BlockHeader = 29,
+            BlockBody = 30,
+            Verification = 31,
+            MeritRemoval = 35,
+
+            #End is used to mark the end of the Enum.
+            #We need to check if we were sent a valid MessageType, and we do this via checking if value < End.
+            End = 36
 
         #Message object.
-        Message* = ref object of RootObj
-            client* {.final.}: uint
+        Message* = object
+            client* {.final.}: int
             content* {.final.}: MessageType
-            len* {.final.}: uint
-            header* {.final.}: string
+            len* {.final.}: int
             message* {.final.}: string
 
 #Finalize the Message.
 func finalize(
-    msg: Message
-) {.raises: [].} =
+    msg: var Message
+) {.forceCheck: [].} =
     msg.ffinalizeClient()
     msg.ffinalizeContent()
     msg.ffinalizeLen()
-    msg.ffinalizeHeader()
     msg.ffinalizeMessage()
 
 #Constructor for incoming data.
 func newMessage*(
-    client: uint,
+    client: int,
     content: MessageType,
-    len: uint,
-    header: string,
+    len: int,
     message: string
-): Message {.raises: [].} =
+): Message {.forceCheck: [].} =
     result = Message(
         client: client,
         content: content,
         len: len,
-        header: header,
         message: message
     )
     result.finalize()
@@ -60,26 +75,19 @@ func newMessage*(
 #Constructor for outgoing data.
 func newMessage*(
     content: MessageType,
-    message: string
-): Message {.raises: [].} =
-    #Serialize the length.
-    var
-        len: int = message.len
-        length: string = ""
-    while len > 255:
-        len = len mod 255
-        length &= char(255)
-    length &= char(len)
-
+    message: string = ""
+): Message {.forceCheck: [].} =
     #Create the Message.
     result = Message(
+        client: 0,
         content: content,
-        len: uint(message.len),
-        header: char(content) & length,
+        len: message.len,
         message: message
     )
     result.finalize()
 
 #Stringify.
-func `$`*(msg: Message): string {.raises: [].} =
-    msg.header & msg.message
+func toString*(
+    msg: Message
+): string {.forceCheck: [].} =
+    char(msg.content) & msg.message

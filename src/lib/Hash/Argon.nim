@@ -8,38 +8,42 @@ import HashCommon
 import Argon2
 
 #Define the Hash Type.
-type ArgonHash* = HashCommon.Hash[512]
+type ArgonHash* = HashCommon.Hash[384]
 
 #Take in data and a salt; return a ArgonHash.
-func Argon*(
+proc Argon*(
     data: string,
     salt: string,
     reduced: bool = false
-): ArgonHash {.raises: [ArgonError].} =
+): ArgonHash {.forceCheck: [].} =
     #The iteration quantity and memory usage values are for testing only.
     #They are not final and will be changed.
     var
-        iterations: uint32
-        memory: uint32
+        #Reduced paramters:
+        iterations: uint32 = 1
+        memory: uint32 = 8 #8 KB of memory.
     if not reduced:
-        #Use 128 MB of RAM.
-        iterations = 1
-        memory = 131072
-    else:
-        #Use 8KB of RAM.
-        memory = 8
+        #Regular paramters.
+        memory = 131072 #128 MB of memory.
 
     try:
         result.data = Argon2d(
             data,
             salt,
-            1,
+            iterations,
             memory,
             1
         ).data
-    except:
-        raise newException(ArgonError, "Argon2d raised an error.")
+    except Exception:
+        doAssert(false, "Argon2d raised an error.")
 
 #String to ArgonHash.
-func toArgonHash*(hash: string): ArgonHash {.raises: [ValueError].} =
-    hash.toHash(512)
+func toArgonHash*(
+    hash: string
+): ArgonHash {.forceCheck: [
+    ValueError
+].} =
+    try:
+        result = hash.toHash(384)
+    except ValueError as e:
+        fcRaise e

@@ -1,103 +1,124 @@
-#Numerical libs.
-import BN
-import ../../lib/Base
+#Errors lib.
+import ../../lib/Errors
+
+#Util lib.
+import ../../lib/Util
 
 #Hash lib.
 import ../../lib/Hash
 
+#Blockchain object.
+import objects/BlockchainObj
+
 #Block lib.
 import Block
+
 #Difficulty object.
 import objects/DifficultyObj
 export DifficultyObj
 
-#String utils standard lib.
-import strutils
+#StInt lib.
+import StInt
 
-#OS standard lib.
-import os
+let
+    #Ten.
+    TEN: StUint[512] = stuint(10, 512)
+    #Highest difficulty.
+    MAX: StUint[512] = "".pad(96, 'F').parse(StUint[512], 16)
 
-#Highest difficulty.
-#This would be in Main's Constants except it's impossible to change without changing the underlying libraries.
-let MAX: BN = "F".repeat(128).toBN(16)
+#Verifies a hash beats a difficulty.
+proc verify*(
+    diff: Difficulty,
+    hash: Hash[384]
+): bool {.forceCheck: [].} =
+    try:
+        result = hash > diff.difficulty.toByteArrayBE()[16 .. 63].toHash(384)
+    except ValueError:
+        result = false
 
-#Verifies a difficulty against a block.
-func verifyDifficulty*(diff: Difficulty, newBlock: Block): bool {.raises: [ValueError].} =
-    result = true
-
-    #If the Argon hash didn't beat the difficulty...
-    if newBlock.argon.toBN() < diff.difficulty:
-        return false
-
-#Calculate the next difficulty using the blocks, difficulties, period Length, and blocks per period.
+#Calculate the next difficulty using the blockchain and blocks per period.
 proc calculateNextDifficulty*(
-    blocks: seq[Block],
-    difficulties: seq[Difficulty],
-    targetTime: uint,
-    blocksPerPeriod: uint
-): Difficulty {.raises: [].} =
-    #If it was the genesis block, keep the same difficulty.
-    if blocks.len == 1:
-        return difficulties[0]
-
+    blockchain: Blockchain,
+    blocksPerPeriod: int
+): Difficulty {.forceCheck: [
+    IndexError
+].} =
     var
         #Last difficulty.
-        last: Difficulty = difficulties[difficulties.len-1]
+        last: Difficulty = blockchain.difficulty
         #New difficulty.
-        difficulty: BN = last.difficulty
-        #Start block of the difficulty.
-        start: uint = blocks[blocks.len - int(blocksPerPeriod + 1)].header.time
-        #End block of the difficulty.
-        endTime: uint = blocks[blocks.len - 1].header.time
+        difficulty: StUint[512] = last.difficulty
+        #Target time.
+        targetTime: uint32 = uint32(blockchain.blockTime * blocksPerPeriod)
+        #Start time of this period.
+        start: uint32
+        #End time.
+        endTime: uint32 = blockchain.tip.header.time
         #Period time.
-        actualTime: uint = endTime - start
+        actualTime: uint32
         #Possible values.
-        possible: BN = MAX - last.difficulty
+        possible: StUint[512] = MAX - last.difficulty
+        #Change.
+        change: StUint[512]
 
-    #Handle divide by zeros.
-    if actualTime == 0:
-        actualTime = 1
+    #Grab the start time.
+    try:
+        start = blockchain[blockchain.height - (blocksPerPeriod + 1)].header.time
+    except IndexError as e:
+        fcRaise e
 
-    #If we went faster...
-    if actualTime < targetTime:
-        #Set the change to be:
-            #The possible values multipled by
-                #The targetTime (bigger) minus the actualTime (smaller)
-                #Over the targetTime
-        #Since we need the difficulty to increase.
-        var change: BN = (possible * newBN(targetTime - actualTime)) div newBN(targetTime)
+    #Calculate the actual time.
+    actualTime = endTime - start
 
-        #If we're increasing the difficulty by more than 10%...
-        if possible / newBN(10) < change:
-            #Set the change to be 10%.
-            change = possible / newBN(10)
+    try:
+        #If we went faster...
+        if actualTime < targetTime:
+            #Set the change to be:
+                #The possible values multipled by
+                    #The targetTime (bigger) minus the actualTime (smaller)
+                    #Over the targetTime
+            #Since we need the difficulty to increase.
+            change = (possible * stuint(targetTime - actualTime, 512)) div stuint(targetTime, 512)
 
-        #Set the difficulty.
-        difficulty = last.difficulty + change
-    #If we went slower...
-    elif actualTime > targetTime:
-        #Set the change to be:
-            #The invalid values
-            #Multipled by the targetTime (smaller)
-            #Divided by the actualTime (bigger)
-        #Since we need the difficulty to decrease.
-        var change: BN = last.difficulty * newBN(targetTime div actualTime)
+            #If we're increasing the difficulty by more than 10%...
+            if possible div TEN < change:
+                #Set the change to be 10%.
+                change = possible div TEN
 
-        #If we're decreasing the difficulty by more than 10% of the possible values...
-        if possible / newBN(10) < change:
-            #Set the change to be 10% of the possible values.
-            change = possible / newBN(10)
+            #Set the difficulty.
+            difficulty = last.difficulty + change
+        #If we went slower...
+        elif actualTime > targetTime:
+            #Set the change to be:
+                #The invalid values
+                #Multipled by the targetTime (smaller)
+                #Divided by the actualTime (bigger)
+            #Since we need the difficulty to decrease.
+            change = last.difficulty * stuint(targetTime div actualTime, 512)
 
-        #Set the difficulty.
-        difficulty = last.difficulty - change
+            #If we're decreasing the difficulty by more than 10% of the possible values...
+            if possible div TEN < change:
+                #Set the change to be 10% of the possible values.
+                change = possible div TEN
+
+            #Set the difficulty.
+            difficulty = last.difficulty - change
+    except DivByZeroError as e:
+        doAssert(false, "Dividing by ten raised a DivByZeroError: " & e.msg)
 
     #If the difficulty is lower than the starting difficulty, use that.
-    if difficulty < difficulties[0].difficulty:
-        difficulty = difficulties[0].difficulty
+    if difficulty < blockchain.startDifficulty.difficulty:
+        difficulty = blockchain.startDifficulty.difficulty
 
     #Create the new difficulty.
-    result = newDifficultyObj(
-        last.endBlock,
-        last.endBlock + blocksPerPeriod,
-        difficulty
-    )
+    try:
+        result = newDifficultyObj(
+            last.endBlock + 1,
+            last.endBlock + blocksPerPeriod,
+            difficulty
+        )
+    except ValueError:
+        #This is a doAssert false as this problem is due to our half-move off of BNs.
+        #This problem (likely) won't exist once we fully move off.
+        #That said, this except shouldn't trigger anyways.
+        doAssert(false, "Couldn't convert the Difficulty to a Hash.")

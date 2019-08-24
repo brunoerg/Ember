@@ -1,15 +1,13 @@
-#BLS lib.
-import ../src/lib/BLS
+#MinerWallet lib.
+import ../src/Wallet/MinerWallet
 
-#Miner Wallet lib.
-import ../src/Database/Merit/MinerWallet
+#String utils standard lib.
+import strutils
 
 #Create the Miner Wallet.
 var miner: MinerWallet = newMinerWallet()
 
 #Print the info.
-echo "Private Key:"
-echo miner.privateKey
+echo "Seed: ", miner.seed.toHex()
 echo "----"
-echo "Public Key:"
-echo miner.publicKey
+echo "Public Key: ", miner.publicKey

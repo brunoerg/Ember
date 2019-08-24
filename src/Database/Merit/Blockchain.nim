@@ -1,124 +1,157 @@
 #Errors lib.
 import ../../lib/Errors
 
-#Util lib.
-import ../../lib/Util
-
 #Hash lib.
 import ../../lib/Hash
 
-#BN lib.
-import BN
+#MinerWallet lib.
+import ../../Wallet/MinerWallet
 
-#BLS lib.
-import ../../lib/BLS
+#Merit DB lib.
+import ../Filesystem/DB/MeritDB
+
+#MeritHolderRecord object.
+import ../common/objects/MeritHolderRecordObj
 
 #Miners object.
 import objects/MinersObj
 
-#Difficulty, Verifications, and Block libs.
+#Difficulty, Block Header, and Block libs.
 import Difficulty
-import Verifications
+import BlockHeader
 import Block
 
 #Blockchain object.
 import objects/BlockchainObj
 export BlockchainObj
 
+#Tables lib.
+import tables
+
 #Create a new Blockchain.
 proc newBlockchain*(
+    db: DB,
     genesis: string,
-    blockTime: uint,
-    startDifficulty: BN
-): Blockchain {.raises: [ValueError, ArgonError, BLSError].} =
+    blockTime: int,
+    startDifficulty: Hash[384]
+): Blockchain {.forceCheck: [].} =
     newBlockchainObj(
+        db,
         genesis,
         blockTime,
         startDifficulty
     )
 
-#Adds a block to the blockchain.
-proc processBlock*(
+#Test a BlockHeader.
+proc testBlockHeader*(
     blockchain: Blockchain,
-    newBlock: Block
-): bool {.raises: [ValueError, BLSError].} =
-    #Result is set to true for if nothing goes wrong.
-    result = true
-
-    let
-        #Blocks Per Month.
-        blocksPerMonth: uint = uint(2592000) div blockchain.blockTime
-        #Grab the Blocks.
-        blocks: seq[Block] = blockchain.blocks
-
-    #Verify the Block Header.
+    header: BlockHeader
+) {.forceCheck: [
+    ValueError,
+    GapError,
+    UncleBlock,
+    DataExists
+]} =
     #If the nonce is off...
-    if newBlock.header.nonce != blockchain.height:
-        return false
+    if header.nonce > blockchain.height:
+        raise newException(GapError, "Missing blocks before the Block we're trying to add.")
+    elif header.nonce < blockchain.height:
+        if blockchain.headers[header.nonce].hash == header.hash:
+            raise newException(DataExists, "BlockHeader was already added.")
+        else:
+            raise newException(UncleBlock, "Old BlockHeader with a different hash than our BlockHeader at that nonce.")
 
     #If the last hash is off...
-    if newBlock.header.last != blocks[^1].argon:
-        return false
+    if header.last != blockchain.tip.hash:
+        raise newException(ValueError, "Invalid last hash.")
 
     #If the time is before the last block's...
-    if newBlock.header.time < blocks[^1].header.time:
-        return false
+    if header.time < blockchain.tip.header.time:
+        raise newException(ValueError, "Invalid time.")
 
-    #Verify the Block Header's Verifications signature matches the Block's Verifications signature.
-    if newBlock.header.verifications != newBlock.verifications.aggregate:
-        return false
+#Adds a block to the blockchain.
+proc processBlock*(
+    blockchain: var Blockchain,
+    newBlock: Block
+) {.forceCheck: [
+    ValueError,
+    GapError,
+    DataExists
+].} =
+    #Verify the Block Header.
+    try:
+        blockchain.testBlockHeader(newBlock.header)
+    except ValueError as e:
+        fcRaise e
+    except GapError as e:
+        fcRaise e
+    except UncleBlock as e:
+        raise newException(ValueError, e.msg)
+    except DataExists as e:
+        fcRaise e
 
     #Verify the Block Header's Merkle Hash of the Miners matches the Block's Miners.
-    if newBlock.header.miners != newBlock.miners.calculateMerkle():
-        return false
+    if newBlock.header.miners != newBlock.miners.merkle.hash:
+        raise newException(ValueError, "Invalid Miners' merkle.")
 
-    #Verify the Block itself.
-    #Verify the Verifications's Aggregate Signature.
-    if not newBlock.verifications.verify():
-        return false
+    #Verify no MeritHolder has multiple Records.
+    var
+        holders: Table[string, bool] = initTable[string, bool]()
+        holder: string
+    for record in newBlock.records:
+        holder = record.key.toString()
+        try:
+            if holders[holder]:
+                raise newException(ValueError, "One MeritHolder has two Records.")
+        except KeyError:
+            discard
+        holders[holder] = true
 
-    #Verify the Miners.
-    var total: uint = 0
-    if (newBlock.miners.len < 1) or (100 < newBlock.miners.len):
+    #Verify the miners.
+    if (newBlock.miners.miners.len < 1) or (100 < newBlock.miners.miners.len):
         raise newException(ValueError, "Invalid Miners quantity.")
-    for miner in newBlock.miners:
-        total += miner.amount
-        if (miner.amount < 1) or (uint(100) < miner.amount):
+    var total: int = 0
+    for miner in newBlock.miners.miners:
+        if (miner.amount < 1) or (100 < miner.amount):
             raise newException(ValueError, "Invalid Miner amount.")
+        total += miner.amount
     if total != 100:
         raise newException(ValueError, "Invalid total Miner amount.")
 
-    #Set the period length.
-    var blocksPerPeriod: uint
-    #If we're in the first month, the period length is one block.
-    if blockchain.height < blocksPerMonth:
-        blocksPerPeriod = 1
-    #If we're in the first three months, the period length is one hour.
-    elif blockchain.height < blocksPerMonth * 3:
-        blocksPerPeriod = 6
-    #If we're in the first six months, the period length is six hours.
-    elif blockchain.height < blocksPerMonth * 6:
-        blocksPerPeriod = 36
-    #If we're in the first year, the period length is twelve hours.
-    elif blockchain.height < blocksPerMonth * 12:
-        blocksPerPeriod = 72
-    #Else, if it's over an year, the period length is a day.
-    else:
-        blocksPerPeriod = 144
+    #If the difficulty wasn't beat...
+    if not blockchain.difficulty.verify(newBlock.hash):
+        raise newException(ValueError, "Difficulty wasn't beat.")
+
+    #Add the Block.
+    blockchain.add(newBlock)
 
     #If the difficulty needs to be updated...
-    if blockchain.difficulties[^1].endBlock <= newBlock.header.nonce:
-        blockchain.add(
-            calculateNextDifficulty(
-                blockchain.blocks,
-                blockchain.difficulties,
-                blockchain.blockTime * blocksPerPeriod,
-                blocksPerPeriod
-            )
-        )
+    if newBlock.nonce == blockchain.difficulty.endBlock:
+        var
+            #Blocks Per Month.
+            blocksPerMonth: int = 2592000 div blockchain.blockTime
+            #Period Length.
+            blocksPerPeriod: int
+        #Set the period length.
+        #If we're in the first month, the period length is one block.
+        if blockchain.height < blocksPerMonth:
+            blocksPerPeriod = 1
+        #If we're in the first three months, the period length is one hour.
+        elif blockchain.height < blocksPerMonth * 3:
+            blocksPerPeriod = 6
+        #If we're in the first six months, the period length is six hours.
+        elif blockchain.height < blocksPerMonth * 6:
+            blocksPerPeriod = 36
+        #If we're in the first year, the period length is twelve hours.
+        elif blockchain.height < blocksPerMonth * 12:
+            blocksPerPeriod = 72
+        #Else, if it's over an year, the period length is a day.
+        else:
+            blocksPerPeriod = 144
 
-    #If the difficulty wasn't beat...
-    if not blockchain.difficulties[^1].verifyDifficulty(newBlock):
-        return false
+        try:
+            blockchain.difficulty = blockchain.calculateNextDifficulty(blocksPerPeriod)
+        except IndexError as e:
+            doAssert(false, "Added a Block successfully but failed to calculate the next difficulty: " & e.msg)
 
-    blockchain.add(newBlock)
+        blockchain.db.save(blockchain.difficulty)

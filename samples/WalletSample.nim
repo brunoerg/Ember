@@ -1,18 +1,15 @@
-#Base lib.
-import ../src/lib/Base
+#HDWallet lib.
+import ../src/Wallet/HDWallet
 
-#Hash lib.
-import ../src/lib/Hash
-
-#Wallet libs.
-import ../src/Wallet/Wallet
+#String utils standard lib.
+import strutils
 
 #Wallet.
-var wallet: Wallet = newWallet()
+var wallet: HDWallet = newHDWallet()
 
 #Print the info.
-echo "Seed:"
-echo wallet.seed
+echo "Secret:"
+echo wallet.secret.toHex()
 echo "----"
 echo "Address:"
 echo wallet.address

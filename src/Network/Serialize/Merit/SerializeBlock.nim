@@ -1,35 +1,18 @@
-#Util lib.
-import ../../../lib/Util
+#Errors lib.
+import ../../../lib/Errors
 
-#Base lib.
-import ../../../lib/Base
-
-#Hash lib.
-import ../../../lib/Hash
-
-#BLS lib.
-import ../../../lib/BLS
-
-#Merit objects.
-import ../../../Database/Merit/objects/VerificationsObj
-import ../../../Database/Merit/objects/BlockHeaderObj
-import ../../../Database/Merit/objects/MinersObj
-import ../../../Database/Merit/objects/BlockObj
+#Block lib.
+import ../../../Database/Merit/Block
 
 #Serialize/Deserialize functions.
 import ../SerializeCommon
 import SerializeBlockHeader
-import SerializeVerifications
-import SerializeMiners
-
-#String utils standard lib.
-import strutils
+import SerializeBlockBody
 
 #Serialize a Block.
-func serialize*(blockArg: Block): string {.raises: [].} =
-    #Create the serialized Block.
+proc serialize*(
+    blockArg: Block
+): string {.forceCheck: [].} =
     result =
-        !blockArg.header.serialize() &
-        !blockArg.proof.toBinary() &
-        !blockArg.verifications.serialize() &
-        !blockArg.miners.serialize()
+        blockArg.header.serialize() &
+        blockArg.body.serialize()

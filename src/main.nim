@@ -1,30 +1,54 @@
-#The Main files include each other sequentially.
-#It starts with MainImports.
-#MainImports is included by MainGlobals.
-#MainGlobals is included by MainLattice.
-#MainLattice is included by MainNetwork.
-#MainNetwork is included by MainUI.
-#It ends with include MainUI.
+discard """
+The Main files are an "include chain". They include each other sequentially, in the following orders:
+    MainImports
+    MainChainParams
+    MainGlobals
+    MainDatabase
+    MainConsensus
+    MainMerit
+    MainTransactions
+    MainPersonal
+    MainNetwork
+    MainInterfaces
 
-#We could include all of them in this file, but then all the other files would throw errors.
-#IDEs can't, and shouldn't, detect that an external file includes that file, and the external file resolves the dependencies.
+We could include all of them in this file, but then all the other files would throw errors.
+IDEs can't, and shouldn't, detect that an external file includes that file, and the external file resolves the dependency requirements.
+"""
 
-#Include the last file in the sequence.
-include MainUI
+#Include the last file in the chain.
+include MainInterfaces
 
-#Spawn the core stuff on a thread since the UI must be on the main thread.
+#Enable running main on a thread since the GUI must always run on the main thread.
 proc main() {.thread.} =
-    mainMerit()
-    mainLattice()
-    mainPersonal()
-    mainNetwork()
-    mainRPC()
+    {.gcsafe.}:
+        mainDatabase()
+        mainConsensus()
+        mainMerit()
+        mainTransactions()
+        mainPersonal()
+        mainNetwork()
+        mainRPC()
 
-    runForever()
-spawn main()
+        runForever()
 
-#Spawn the GUI.
-mainGUI()
-
-#Sync up with the main thread.
-sync()
+#If we weren't compiled with a GUI...
+when defined(nogui):
+    #Run main.
+    main()
+#If we were...
+else:
+    #If it's disabled...
+    if not config.gui:
+        main()
+    #If it's enabled...
+    else:
+        #Spawn main on a thread.
+        spawn main()
+        #Run the GUI on the main thread,
+        mainGUI()
+        #If WebView exits, perform a safe shutdown.
+        toRPC.send(%* {
+            "module": "system",
+            "method": "quit",
+            "args": []
+        })

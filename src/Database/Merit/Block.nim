@@ -7,71 +7,90 @@ import ../../lib/Util
 #Hash lib.
 import ../../lib/Hash
 
-#Verifications and Miners objects.
-import objects/VerificationsObj
-import objects/MinersObj
+#MinerWallet lib.
+import ../../Wallet/MinerWallet
 
-#BlockHeader and Block objects.
-import objects/BlockHeaderObj
+#MeritHolderRecord object.
+import ../common/objects/MeritHolderRecordObj
+
+#Consensus lib.
+import ../Consensus/Consensus
+
+#BlockHeader lib.
+import BlockHeader
+
+#Block object.
 import objects/BlockObj
-#Export the BlockHeader and Block objects.
-export BlockHeaderObj
 export BlockObj
 
-#Finals lib.
-import finals
+#Serialize BlockHeader lib (for inc).
+import ../../Network/Serialize/Merit/SerializeBlockHeader
 
-#String utils standard library.
-import strutils
+#Serialize Verification lib.
+import ../../Network/Serialize/Consensus/SerializeVerification
 
-#New Block function. Creates a new block. Raises an error if there's an issue.
-proc newBlock*(
-    nonce: uint,
-    last: ArgonHash,
-    verifications: Verifications,
-    miners: Miners,
-    proof: uint = 0,
-    time: uint = getTime()
-): Block {.raises: [
-    ValueError,
-    ArgonError
-].} =
-    #TODO: Verify the verifiers in the Verifications.
-
-    #Verify the Miners.
-    var total: uint = 0
-    if (miners.len < 1) or (100 < miners.len):
-        raise newException(ValueError, "Invalid Miners quantity.")
-    for miner in miners:
-        total += miner.amount
-        if (miner.amount < 1) or (uint(100) < miner.amount):
-            raise newException(ValueError, "Invalid Miner amount.")
-    if total != 100:
-        raise newException(ValueError, "Invalid total Miner amount.")
-
-    #Ceate the block.
-    result = newBlockObj(
-        nonce,
-        last,
-        verifications,
-        miners,
-        proof,
-        time
-    )
-
-#Set the Verifications.
-proc setVerifications*(newBlock: Block, verifications: Verifications) =
-    newBlock.verifications = verifications
-    newBlock.header.setVerifications(verifications)
-
-proc setMiners*(newBlock: Block, miners: Miners) =
-    newBlock.miners = miners
-    newBlock.header.setMiners(miners)
+#Tables standard lib.
+import tables
 
 #Increase the proof.
-proc inc*(newBlock: Block) =
+func inc*(
+    blockArg: var Block
+) {.forceCheck: [].} =
     #Increase the proof.
-    inc(newBlock.proof)
+    inc(blockArg.header.proof)
+    #Recalculate the hash.
+    blockArg.header.hash = Argon(blockArg.header.serializeHash(), blockArg.header.proof.toBinary().pad(8))
 
-    #Recalculate the Argon hash.
-    newBlock.argon = Argon(newBlock.hash.toString(), newBlock.proof.toBinary())
+#Verify the aggregate signature for a table of Key -> seq[Element].
+proc verify*(
+    blockArg: Block,
+    elems: Table[string, seq[Element]]
+): bool {.forceCheck: [].} =
+    result = true
+
+    #Make sure there's the same amount of MeritHolders as there are records.
+    if elems.len != blockArg.records.len:
+        return false
+
+    #Aggregate Infos for each MeritHolder.
+    var agInfos: seq[BLSAggregationInfo] = @[]
+    #Iterate over every Record.
+    for r, record in blockArg.records:
+        #Key in the record.
+        var key: string = record.key.toString()
+
+        try:
+            #Iterate over this holder's elements.
+            for elem in elems[key]:
+                #Create AggregationInfos
+                case elem:
+                    of MeritRemoval as mr:
+                        agInfos.add(mr.agInfo)
+                    else:
+                        agInfos.add(newBLSAggregationInfo(record.key, elem.serializeSign()))
+        #The presented Table has a different set of MeritHolders than the records.
+        except KeyError:
+            return false
+        #Couldn't create an AggregationInfo out of a BLSPublicKey and a hash.
+        except BLSError:
+            return false
+
+    #Calculate the fianl aggregation info.
+    var agInfo: BLSAggregationInfo
+    try:
+        agInfo = agInfos.aggregate()
+    except BLSError:
+        return false
+
+    #Both the AgInfo and the Aggregate should be null, or neither should be.
+    if agInfo.isNil != blockArg.header.aggregate.isNil:
+        return false
+
+    #If it's not null, verify it.
+    if not agInfo.isNil:
+        try:
+            blockArg.header.aggregate.setAggregationInfo(agInfo)
+            if not blockArg.header.aggregate.verify():
+                return false
+        except BLSError:
+            return false

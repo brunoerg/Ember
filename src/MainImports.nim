@@ -4,60 +4,66 @@ import lib/Errors
 #Util lib.
 import lib/Util
 
-#BN lib.
-import BN
-
 #Hash lib.
 import lib/Hash
 
-#Wallet.
+#Merkle lib.
+import Database/common/Merkle
+
+#Wallet libs.
+import Wallet/MinerWallet
 import Wallet/Wallet
+
+#Transactions.
+import Database/Transactions/Transactions
+
+#Consensus.
+import Database/Consensus/Consensus
 
 #Merit.
 import Database/Merit/Merit
 
-#Lattice.
-import Database/Lattice/Lattice
+#DB.
+import Database/Filesystem/DB/DB
 
 #Network.
 import Network/Network
 
 #Serialization libs.
-import Network/Serialize/Merit/SerializeMiners
-import Network/Serialize/Merit/SerializeVerifications
-import Network/Serialize/Merit/SerializeBlock
+import Network/Serialize/Transactions/SerializeClaim
+import Network/Serialize/Transactions/SerializeSend
+import Network/Serialize/Transactions/SerializeData
 
-import Network/Serialize/Lattice/SerializeClaim
-import Network/Serialize/Lattice/SerializeSend
-import Network/Serialize/Lattice/SerializeReceive
-import Network/Serialize/Lattice/SerializeData
+import Network/Serialize/Consensus/SerializeVerification
 
-#UI.
-import UI/UI
+import Network/Serialize/Merit/SerializeBlockHeader
 
-#Event lib.
-import ec_events
+#Interfaces.
+import Interfaces/Interfaces
 
-#Finals lib.
-import finals
+#Global Function Box object.
+import objects/GlobalFunctionBoxObj
 
-#BLS lib.
-import lib/BLS
+#Config object.
+import objects/ConfigObj
 
 #OS standard lib.
 import os
 
-#Async standard lib.
-import asyncdispatch
+#Locks standard lib.
+import locks
 
 #Thread standard lib.
 import threadpool
 
-#String utils standard lib.
-import strutils
+#Async standard lib.
+import asyncdispatch
 
 #JSON standard lib.
 import json
+
+#Seq utils standard lib.
+import sequtils
 
 #Tables standard lib.
 import tables

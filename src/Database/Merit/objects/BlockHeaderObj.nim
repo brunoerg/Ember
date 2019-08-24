@@ -7,85 +7,53 @@ import ../../../lib/Util
 #Hash lib.
 import ../../../lib/Hash
 
-#Merkle Tree lib.
-import ../../../lib/Merkle
+#MinerWallet lib (for BLSSignature).
+import ../../../Wallet/MinerWallet
 
-#BLS lib.
-import ../../../lib/BLS
-
-#Wallet lib.
-import ../../../Wallet/Wallet
-
-#Verifications and Miners objects.
-import VerificationsObj
+#Miners object.
 import MinersObj
 
 #Finals lib.
 import finals
 
-#String utils standard lib.
-import strutils
-
 finalsd:
     #Define the BlockHeader object.
-    type BlockHeader* = ref object of RootObj
+    type BlockHeader* = object
+        #Block hash.
+        hash*: ArgonHash
+
         #Nonce.
-        nonce* {.final.}: uint
+        nonce* {.final.}: int
         #Argon hash of the last block.
         last* {.final.}: ArgonHash
 
-        #Aggregate Signatue of the Verifications.
-        verifications*: BLSSignature
+        #Aggregate Signatue of the Elements.
+        aggregate*: BLSSignature
         #Merkle tree hash of the Miners.
-        miners*: SHA512Hash
+        miners*: Blake384Hash
 
         #Timestamp.
-        time*: uint
-
-#Set Verifications function.
-proc setVerifications*(
-    header: BlockHeader,
-    verifications: Verifications
-) {.raises: [].} =
-    header.verifications = verifications.aggregate
-
-#Calculate the Miners's Merkle Hash.
-proc calculateMerkle*(miners: Miners): SHA512Hash {.raises: [].} =
-    #Create a Markle Tree of the Miners.
-    var hashes: seq[SHA512Hash] = newSeq[SHA512Hash](miners.len)
-    for i in 0 ..< miners.len:
-        hashes[i] = SHA512(
-            miners[i].miner.toString() &
-            miners[i].amount.toBinary()
-        )
-    result = newMerkleTree(hashes).hash
-
-#Set Miners function.
-proc setMiners*(
-    header: BlockHeader,
-    miners: Miners
-) {.raises: [].} =
-    header.miners = miners.calculateMerkle()
+        time*: uint32
+        #Proof.
+        proof*: uint32
 
 #Constructor.
-proc newBlockHeaderObj*(
-    nonce: uint,
+func newBlockHeaderObj*(
+    nonce: int,
     last: ArgonHash,
-    verifications: Verifications,
-    miners: Miners,
-    time: uint,
-): BlockHeader {.raises: [].} =
-    #Create the Block Header.
+    aggregate: BLSSignature,
+    miners: Blake384Hash,
+    time: uint32,
+    proof: uint32
+): BlockHeader {.forceCheck: [].} =
     result = BlockHeader(
         nonce: nonce,
         last: last,
-        time: time
+        aggregate: aggregate,
+        miners: miners,
+        time: time,
+        proof: proof
     )
+
     result.ffinalizeNonce()
     result.ffinalizeLast()
-
-    #Set the Verifications.
-    result.setVerifications(verifications)
-
-    #Set the Miners.
-    result.setMiners(miners)

@@ -7,62 +7,96 @@ import ../../../lib/Util
 #Hash lib.
 import ../../../lib/Hash
 
-#Block Header, Verifications, and Miners objects.
-import BlockHeaderObj
-import VerificationsObj
-import MinersObj
+#MinerWallet lib (for BLSSignature).
+import ../../../Wallet/MinerWallet
 
-#Serialization libs.
-import ../../../Network/Serialize/Merit/SerializeBlockHeader
-import ../../../Network/Serialize/Merit/SerializeMiners
+#Block Header lib.
+import ../BlockHeader
+
+#Block Body object.
+import BlockBodyObj
+export BlockBodyObj
+
+#MeritHolderRecord and Miners objects.
+import ../../common/objects/MeritHolderRecordObj
+import MinersObj
 
 #Finals lib.
 import finals
 
-#String utils standard lib.
-import strutils
-
-#Define the Block class.
-type Block* = ref object of RootObj
+#Block class.
+type Block* = object
     #Block Header.
     header*: BlockHeader
-    #Random number to prove work was done.
-    proof*: uint
-    #Header Hash.
-    hash*: SHA512Hash
-    #Argon2d hash (Argon2d(hash, proof) must be greater than the difficulty).
-    argon*: ArgonHash
+    #Block Body.
+    body*: BlockBody
 
-    #Verifications.
-    verifications*: Verifications
-    #Who to attribute the Merit to (amount ranges from 0 to 100).
-    miners*: Miners
+#Nonce getter.
+proc nonce*(
+    blockArg: Block
+): int {.inline, forceCheck: [].} =
+    blockArg.header.nonce
+
+#Hash getter.
+proc hash*(
+    blockArg: Block
+): Hash[384] {.inline, forceCheck: [].} =
+    blockArg.header.hash
+
+#Records getter.
+proc records*(
+    blockArg: Block
+): seq[MeritHolderRecord] {.inline, forceCheck: [].} =
+    blockArg.body.records
+
+#Miners getter.
+proc miners*(
+    blockArg: Block
+): Miners {.inline, forceCheck: [].} =
+    blockArg.body.miners
+
+#Miners setter.
+proc `miners=`*(
+    blockArg: var Block,
+    miners: Miners
+) {.forceCheck: [].} =
+    blockArg.miners = miners
+    blockArg.header.miners = miners.merkle.hash
 
 #Constructor.
-proc newBlockObj*(
-    nonce: uint,
+func newBlockObj*(
+    nonce: int,
     last: ArgonHash,
-    verifications: Verifications,
+    aggregate: BLSSignature,
+    records: seq[MeritHolderRecord],
     miners: Miners,
-    proof: uint,
-    time: uint
-): Block {.raises: [ArgonError].} =
-    #Create the Block.
-    result = Block(
-        header: newBlockheaderObj(
-            nonce,
-            last,
-            verifications,
-            miners,
-            time
-        ),
-        proof: proof,
-        verifications: verifications,
-        miners: miners
+    time: uint32 = getTime(),
+    proof: uint32 = 0
+): Block {.forceCheck: [].} =
+    #Create the Block Header.
+    var header: BlockHeader = newBlockHeader(
+        nonce,
+        last,
+        aggregate,
+        miners.merkle.hash,
+        time,
+        proof
     )
 
-    #Set the Header hash.
-    result.hash = SHA512(result.header.serialize())
+    #Create the Block.
+    result = Block(
+        header: header,
+        body: newBlockBodyObj(
+            records,
+            miners
+        )
+    )
 
-    #Set the Argon hash.
-    result.argon = Argon(result.hash.toString(), proof.toBinary())
+func newBlockObj*(
+    header: BlockHeader,
+    body: BlockBody
+): Block {.inline, forceCheck: [].} =
+    Block(
+        header: header,
+        body: body
+    )

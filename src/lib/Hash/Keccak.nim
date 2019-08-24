@@ -1,11 +1,11 @@
+#Errors lib.
+import ../Errors
+
 #Hash master type.
 import HashCommon
 
 #nimcrypto lib.
 import nimcrypto
-
-#String utils standard lib.
-import strutils
 
 #Define the Hash Types.
 type
@@ -13,7 +13,9 @@ type
     Keccak_512Hash* = HashCommon.Hash[512]
 
 #Keccak 256 hashing algorithm.
-proc Keccak_256*(bytesArg: string): Keccak_256Hash {.raises: [].} =
+proc Keccak_256*(
+    bytesArg: string
+): Keccak_256Hash {.forceCheck: [].} =
     #Copy the bytes argument.
     var bytes: string = bytesArg
 
@@ -27,7 +29,9 @@ proc Keccak_256*(bytesArg: string): Keccak_256Hash {.raises: [].} =
     result.data = keccak256.digest(cast[ptr uint8](addr bytes[0]), uint(bytes.len)).data
 
 #Keccak 512 hashing algorithm.
-proc Keccak_512*(bytesArg: string): Keccak_512Hash {.raises: [].} =
+proc Keccak_512*(
+    bytesArg: string
+): Keccak_512Hash {.forceCheck: [].} =
     #Copy the bytes argument.
     var bytes: string = bytesArg
 
@@ -41,9 +45,23 @@ proc Keccak_512*(bytesArg: string): Keccak_512Hash {.raises: [].} =
     result.data = keccak512.digest(cast[ptr uint8](addr bytes[0]), uint(bytes.len)).data
 
 #String to Keccak_256Hash.
-func toKeccak_256Hash*(hash: string): Keccak_256Hash {.raises: [ValueError].} =
-    hash.toHash(256)
+func toKeccak_256Hash*(
+    hash: string
+): Keccak_256Hash {.forceCheck: [
+    ValueError
+].} =
+    try:
+        result = hash.toHash(256)
+    except ValueError as e:
+        fcRaise e
 
 #String to Keccak_512Hash.
-func toKeccak_512Hash*(hash: string): Keccak_512Hash {.raises: [ValueError].} =
-    hash.toHash(512)
+func toKeccak_512Hash*(
+    hash: string
+): Keccak_512Hash {.forceCheck: [
+    ValueError
+].} =
+    try:
+        result = hash.toHash(512)
+    except ValueError as e:
+        fcRaise e

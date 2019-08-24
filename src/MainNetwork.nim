@@ -1,39 +1,47 @@
 include MainPersonal
 
-proc mainNetwork() {.raises: [
-    AsyncError,
-    SocketError
-].} =
+proc mainNetwork() {.forceCheck: [].} =
     {.gcsafe.}:
         #Create the Network..
-        network = newNetwork(NETWORK_ID, NETWORK_PROTOCOL, events)
+        network = newNetwork(
+            params.NETWORK_ID,
+            params.NETWORK_PROTOCOL,
+            functions
+        )
 
-        #Start listening.
-        network.start(NETWORK_PORT)
+        #Start listening, if we're supposed to.
+        if config.server:
+            try:
+                asyncCheck network.listen(config)
+            except Exception:
+                discard
 
         #Handle network events.
         #Connect to another node.
-        try:
-            events.on(
-                "network.connect",
-                proc (ip: string, port: uint): Future[bool] {.async.} =
-                    try:
-                        await network.connect(ip, port)
-                        result = true
-                    except:
-                        result = false
-            )
-        except:
-            raise newException(AsyncError, "Couldn't add an Async proc to the EventEmitter.")
+        functions.network.connect = proc (
+            ip: string,
+            port: int
+        ) {.forceCheck: [
+            ClientError
+        ], async.} =
+            try:
+                await network.connect(ip, port)
+            except ClientError as e:
+                fcRaise e
+            except Exception as e:
+                doAssert(false, "Couldn't connect to another node due to an exception thrown by async: " & e.msg)
 
-        #Broadcast a message. This is used to send data out.
-        events.on(
-            "network.broadcast",
-            proc (msgType: MessageType, msg: string) {.raises: [AsyncError].} =
-                network.broadcast(
+        #Broadcast a message.
+        functions.network.broadcast = proc (
+            msgType: MessageType,
+            msg: string
+        ) {.forceCheck: [].} =
+            try:
+                asyncCheck network.broadcast(
                     newMessage(
                         msgType,
                         msg
                     )
                 )
-        )
+            except Exception as e:
+                doAssert(false, "Network.broadcast threw an Exception despite not naturally throwing any: " & e.msg)
